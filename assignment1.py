@@ -1,189 +1,181 @@
-"""
-Assignment 2 Solution Key
-Course: Introduction to Python
-"""
-
-# ==========================================
-# Question 1: GET vs POST Requests
-# ==========================================
-"""
-Explanation:
-- GET Request: Used to retrieve or request data from a server. It does not 
-  modify any data on the server. Parameters are sent directly inside the URL 
-  (e.g., https://example.com/search?q=python).
-  
-- POST Request: Used to send data to a server to create or update resources 
-  (like submitting a form or uploading a file). The data is sent securely 
-  inside the body of the request, not visible in the URL.
+ """
+ASSIGNMENT 1 SOLUTION FILE
+Course: Advanced Python / Software Architecture
+Student Submission
 """
 
-import requests
-
-# Example of making a POST request using the requests library
-url = "https://httpbin.org/post"  # A free API testing endpoint
-
-# Data we want to send to the server
-student_data = {
-    "name": "Alice",
-    "course": "Computer Science",
-    "year": 1
-}
-
-# Sending the POST request with JSON data
-response = requests.post(url, json=student_data)
-
-# Checking the response from the server
-if response.status_code == 200:
-    print("Question 1 Output:")
-    print("Data successfully sent!")
-    print("Server Response:", response.json()["json"])
-    print("-" * 40)
+import time
 
 
-# ==========================================
-# Question 2: Working with SQLite in Python
-# ==========================================
+def rate_limit(max_calls: int, period: int):
+    def decorator(func):
+        func_calls = []
+
+        def wrapper(*args, **kwargs):
+            now = time.time()
+
+            if args and hasattr(args[0], "__dict__"):
+                instance = args[0]
+                
+                if not hasattr(instance, "_rate_limit_store"):
+                    instance._rate_limit_store = {}
+                
+                history = instance._rate_limit_store.setdefault(func.__name__, [])
+                history = [t for t in history if now - t < period]
+                
+                if len(history) >= max_calls:
+                    raise Exception(f"Rate limit exceeded for method '{func.__name__}'")
+                
+                history.append(now)
+                instance._rate_limit_store[func.__name__] = history
+
+            else:
+                nonlocal func_calls
+                func_calls = [t for t in func_calls if now - t < period]
+
+                if len(func_calls) >= max_calls:
+                    raise Exception(f"Rate limit exceeded for function '{func.__name__}'")
+
+                func_calls.append(now)
+
+            return func(*args, **kwargs)
+
+        return wrapper
+    return decorator
+
+
+class EventDispatcher:
+    def __init__(self):
+        self._listeners = {}
+
+    def subscribe(self, event_type: str, callback: callable):
+        if event_type not in self._listeners:
+            self._listeners[event_type] = []
+        
+        if callback not in self._listeners[event_type]:
+            self._listeners[event_type].append(callback)
+
+    def unsubscribe(self, event_type: str, callback: callable):
+        if event_type in self._listeners and callback in self._listeners[event_type]:
+            self._listeners[event_type].remove(callback)
+
+    def dispatch(self, event_type: str, *args, **kwargs):
+        if event_type in self._listeners:
+            for callback in list(self._listeners[event_type]):
+                try:
+                    callback(*args, **kwargs)
+                except Exception as e:
+                    print(f"Error in callback '{callback.__name__}' during event '{event_type}': {e}")
+
+
+class Typed:
+    def __init__(self, expected_type: type):
+        self.expected_type = expected_type
+        self.storage_name = None
+
+    def __set_name__(self, owner, name):
+        self.storage_name = f"_{name}"
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        return getattr(instance, self.storage_name, None)
+
+    def __set__(self, instance, value):
+        if not isinstance(value, self.expected_type):
+            raise TypeError(f"Expected {self.expected_type.__name__}, got {type(value).__name__}")
+        
+        setattr(instance, self.storage_name, value)
+
+
+def product_of_multiples(factor: int, limit: int) -> int:
+    product = 1
+    found_multiple = False
+
+    for multiple in range(factor, limit, factor):
+        product *= multiple
+        found_multiple = True
+
+    return product if found_multiple else 0
+
+
 """
-Key Steps Explained:
+==============================================================================
+QUESTION 1 EXPLANATION ANSWERS
+==============================================================================
 
-1. sqlite3.connect('database_name.db'):
-   This connects Python to a database file. If the database file does not exist,
-   SQLite will automatically create a new one.
+IDENTIFY BUG 1: UnboundLocalError Explanation
+----------------------------------------------
+Python uses static scoping rules for local variables inside functions. When Python 
+compiles the 'wrapper' function, it sees the assignment statement:
+    `calls = [t for t in calls if now - t < period]`
 
-2. Cursor Object (conn.cursor()):
-   The cursor acts like a pointer or control tool that lets us run SQL queries, 
-   execute commands, and fetch results back into Python.
+Because 'calls' appears on the left side of an assignment inside 'wrapper', Python 
+flags 'calls' as a LOCAL variable for that entire scope. 
 
-3. commit() Method (conn.commit()):
-   This saves (commits) all changes made to the database permanently. Without 
-   calling commit(), any changes made during the session (like inserting or 
-   updating data) will be lost when the program closes.
+During runtime, when Python evaluates the right-hand side (`[t for t in calls ...]`), 
+it looks for the local variable 'calls'. However, because it has not been assigned 
+a local value yet at that line, Python raises an `UnboundLocalError`.
+
+IDENTIFY BUG 2: State Tracking Across Class Method Instances
+------------------------------------------------------------
+In the original implementation, the `calls` list lives in the closure of the 
+decorator function. When decorating a class method, EVERY instance of that class 
+shares the SAME single `calls` list in memory. 
+
+If Instance A makes 3 calls and hits the rate limit, Instance B will also be blocked 
+from making calls—even if Instance B has made zero calls itself.
+
+State tracking must be tied to the instance (`self`, which is `args[0]`). 
+By storing a dictionary of histories on `self` (e.g., `self._rate_limit_store`), 
+each object maintains its own independent rate limit window.
 """
 
 
-# ==========================================
-# Question 3: List Comprehensions
-# ==========================================
-"""
-Explanation:
-List comprehensions provide a shorter, cleaner syntax to create a new list 
-based on the values of an existing iterable (like a range or another list).
-
-Syntax:
-[expression for item in iterable if condition]
-"""
-
-# Task: Odd numbers between 1 and 50 that are divisible by 3
-# Step-by-step logic:
-# 1. Range is from 1 to 50: range(1, 51)
-# 2. Odd number check: num % 2 != 0
-# 3. Divisible by 3 check: num % 3 == 0
-
-odd_div_by_three = [num for num in range(1, 51) if num % 2 != 0 and num % 3 == 0]
-
-print("Question 3 Output:")
-print("Odd numbers between 1 and 50 divisible by 3:")
-print(odd_div_by_three)
-print("-" * 40)
-
-
-# ==========================================
-# Question 4: Memory-Efficient File Generator
-# ==========================================
-
-def chunked_file_reader(file_path, chunk_size_bytes=1024 * 1024):
-    """
-    Reads a large file lazily in chunks to prevent OutOfMemory errors.
-    Handles incomplete lines at chunk boundaries to yield unbroken lines.
-    """
-    buffer = ""
-
-    with open(file_path, 'r', encoding='utf-8') as file:
-        while True:
-            # Read a specific chunk size from the file
-            chunk = file.read(chunk_size_bytes)
-
-            # If chunk is empty, we reached the end of the file
-            if not chunk:
-                break
-
-            # Add the new chunk to our existing leftover buffer
-            buffer += chunk
-
-            # Split lines by newline character
-            lines = buffer.split('\n')
-
-            # The last item in 'lines' might be an incomplete line,
-            # so we keep it in the buffer for the next iteration
-            buffer = lines.pop()
-
-            # Yield all complete lines
-            for line in lines:
-                yield line
-
-        # Yield any remaining text left in the buffer after reading the entire file
-        if buffer:
-            yield buffer
-
-
-# Example usage test for Question 4
 if __name__ == "__main__":
-    # Quick demonstration using a temporary sample file
-    sample_filename = "sample_test.txt"
+    @rate_limit(max_calls=2, period=2)
+    def standalone_demo(user_id):
+        return f"Data retrieved for {user_id}"
 
-    with open(sample_filename, "w", encoding="utf-8") as f:
-        f.write("Line 1: Introduction to Python\n")
-        f.write("Line 2: Working with Generators\n")
-        f.write("Line 3: Memory Efficient Operations\n")
+    class UserAPI:
+        @rate_limit(max_calls=2, period=2)
+        def fetch(self, user_id):
+            return f"User API Data for {user_id}"
 
-    print("Question 4 Output:")
-    # Using a small chunk size (e.g., 10 bytes) to demonstrate boundary handling
-    for line in chunked_file_reader(sample_filename, chunk_size_bytes=10):
-        print("Yielded line:", line)
+    class Person:
+        name = Typed(str)
+        age = Typed(int)
 
-    print("-" * 40)
+        def __init__(self, name: str, age: int):
+            self.name = name
+            self.age = age
 
+    print(standalone_demo("User_101"))
+    print(standalone_demo("User_102"))
 
-# ==========================================
-# Question 5: Object-Oriented Programming (OOP)
-# ==========================================
+    user_a = UserAPI()
+    user_b = UserAPI()
+    print(user_a.fetch("A"))
+    print(user_a.fetch("A"))
+    print(user_b.fetch("B"))
 
-class Car:
-    def __init__(self, make, model, year):
-        self.make = make
-        self.model = model
-        self.year = year
+    dispatcher = EventDispatcher()
 
-    def get_description(self):
-        return f"{self.year} {self.make} {self.model}"
+    def listener_one(msg):
+        print(f"Listener 1: {msg}")
 
+    def listener_failing(msg):
+        raise ValueError("Error triggered")
 
-class ElectricCar(Car):
-    def __init__(self, make, model, year, battery_size):
-        # Call the parent class constructor using super()
-        super().__init__(make, model, year)
-        self.battery_size = battery_size  # Battery size in kWh
+    def listener_two(msg):
+        print(f"Listener 2: {msg}")
 
-    # Overriding the parent method to include battery info
-    def get_description(self):
-        base_desc = super().get_description()
-        return f"{base_desc} with a {self.battery_size}kWh battery"
+    dispatcher.subscribe("test_event", listener_one)
+    dispatcher.subscribe("test_event", listener_failing)
+    dispatcher.subscribe("test_event", listener_two)
+    dispatcher.dispatch("test_event", msg="Execution Test")
 
-    # Specific method for battery details
-    def get_battery_info(self):
-        # Estimating simple range based on battery capacity (approx 5 km per kWh)
-        estimated_range = self.battery_size * 5
-        return (f"Battery Capacity: {self.battery_size} kWh\n"
-                f"Estimated Range: ~{estimated_range} km\n"
-                f"Standard Charge Time: 6 to 8 hours (AC Fast Charger)")
+    p = Person("Alice", 25)
+    print(f"Person: {p.name}, {p.age}")
 
-
-# Testing Question 5
-print("Question 5 Output:")
-my_tesla = ElectricCar("Tesla", "Model 3", 2024, 75)
-
-# Testing overridden description
-print(my_tesla.get_description())
-print()
-# Testing detailed battery info
-print(my_tesla.get_battery_info())
+    print(f"Product of multiples: {product_of_multiples(3, 10)}")battery_info())
