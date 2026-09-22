@@ -1,9 +1,3 @@
-"""
-ASSIGNMENT 1 SOLUTION FILE
-Course: Advanced Python / Software Architecture
-Student Submission
-"""
-
 import time
 
 
