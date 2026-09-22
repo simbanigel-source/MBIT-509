@@ -1,8 +1,3 @@
-"""
-Assignment 2 Solution Key
-Course: Introduction to Python
-"""
-
 # ==========================================
 # Question 1: GET vs POST Requests
 # ==========================================
